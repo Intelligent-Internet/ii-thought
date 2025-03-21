@@ -1,0 +1,4 @@
+[submodule "ii_verl"]
+	path = ii_verl
+	url = https://github.com/Intelligent-Internet/ii_verl.git
+	branch = ii_verl
