@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rl_verifier"
+version = "0.1.0"
+description = "RLHF Verifier: A package for verifying LLM generated output for RLHF"
+requires-python = ">=3.10"
+dependencies = [
+]
+
+[tool.setuptools]
+packages = ["rl_verifier"]
+package-dir = { "" = "src" }

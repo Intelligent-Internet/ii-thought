@@ -1,0 +1,8 @@
+fastapi
+pydantic-settings
+uvicorn
+python-dotenv
+requests
+openai
+math-verify
+sandbox-fusion
