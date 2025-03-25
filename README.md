@@ -82,7 +82,7 @@ LLM_JUDGE_TEMPERATURE=0.0                       # Sampling temperature
 USE_FORMAT_VERIFIER=false                       # Whether to use format verifier
 ```
 
-5. Set up Code Sandbox (if using code verification):
+4. Set up Code Sandbox (if using code verification):
 ```bash
 # Start the sandbox server
 docker run -d  \
