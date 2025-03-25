@@ -1,6 +1,8 @@
 import json
 import requests
 import random
+import time
+import http.client
 
 from typing import Dict, Any, Union, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,13 +27,20 @@ class RLVerifierClient:
         self,
         base_url: Union[str, List[str]] = None,
         timeout: int = 30,
+        max_retries: int = 3,
+        initial_retry_delay: float = 2.0,
+        max_retry_delay: float = 10.0,
+        retry_backoff_factor: float = 2.0,
     ):
-        """
-        Initialize the RL Verifier client.
+        """Initialize the RL Verifier client.
 
         Args:
             base_url: The base URL of the RL Verifier API
             timeout: Request timeout in seconds
+            max_retries: Maximum number of retry attempts for failed requests
+            initial_retry_delay: Initial delay between retries in seconds
+            max_retry_delay: Maximum delay between retries in seconds
+            retry_backoff_factor: Factor to multiply delay by after each retry
         """
         if isinstance(base_url, list):
             self.base_urls = [url.rstrip("/") for url in base_url]
@@ -43,26 +52,24 @@ class RLVerifierClient:
                 raise RLVerifierError(f"Failed to connect {base_url}: {rsp.text}")
 
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.initial_retry_delay = initial_retry_delay
+        self.max_retry_delay = max_retry_delay
+        self.retry_backoff_factor = retry_backoff_factor
 
     def _handle_response(self, response: requests.Response) -> Dict[str, Any]:
-        """
-        Handle the response from the API.
+        """Handle the response from the API.
 
         Args:
             response: The response object from the requests library
 
         Returns:
             The parsed JSON response
-
-        Raises:
-            ValidationError: If the request data is invalid
-            VerificationError: If the verification fails
-            ServerError: If the server returns an error
         """
         try:
             response.raise_for_status()
             return response.json()
-        except requests.exceptions.HTTPError as e:
+        except requests.exceptions.HTTPError:
             if response.status_code == 422:
                 raise ValidationError(f"Invalid request data: {response.text}")
             elif response.status_code == 400:
@@ -72,21 +79,45 @@ class RLVerifierClient:
         except json.JSONDecodeError:
             raise ServerError(f"Failed to parse response as JSON: {response.text}")
 
-    def _verify_pure(
-        self, llm_output: str, verification_info: str, base_url: str
-    ) -> float:
+    def _make_request(self, base_url: str, payload: Dict[str, Any]) -> float:
+        """Make a request to the verifier server with retry logic.
+
+        Args:
+            base_url: The base URL to make the request to
+            payload: The request payload
+
+        Returns:
+            The verification score
         """
-        Verify the LLM output using the pure verification API.
-        """
-        payload = {"llm_output": llm_output, "verification_info": verification_info}
+        retry_delay = self.initial_retry_delay
+        last_error = None
 
-        response = requests.post(
-            f"{base_url}/reward", json=payload, timeout=self.timeout
-        )
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = requests.post(
+                    f"{base_url}/reward", json=payload, timeout=self.timeout
+                )
+                response_data = self._handle_response(response)
+                return response_data["score"]
+            except (requests.exceptions.ConnectionError, http.client.RemoteDisconnected) as e:
+                last_error = ConnectionError(f"Failed to connect to the server: {str(e)}")
+            except requests.exceptions.Timeout as e:
+                last_error = TimeoutError(f"Request timed out: {str(e)}")
+            except (ValidationError, ServerError, VerificationError):
+                # Re-raise these exceptions as they're already properly typed
+                raise
+            except Exception as e:
+                last_error = RLVerifierError(f"Unexpected error: {str(e)}")
 
-        response_data = self._handle_response(response)
+            if attempt < self.max_retries and (isinstance(last_error, ConnectionError) or isinstance(last_error, TimeoutError)):
+                print(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * self.retry_backoff_factor, self.max_retry_delay)
+                # Try a different base URL if available
+                if len(self.base_urls) > 1:
+                    base_url = random.choice([url for url in self.base_urls if url != base_url])
 
-        return response_data["score"]
+        raise last_error
 
     def verify(
         self, llm_output: str, verification_info: Union[str, Dict[str, Any]]
@@ -101,33 +132,12 @@ class RLVerifierClient:
 
         Returns:
             The verification score between 0 and 1
-
-        Raises:
-            ConnectionError: If there's an issue connecting to the server
-            TimeoutError: If the request times out
-            ValidationError: If the request data is invalid
-            VerificationError: If the verification fails
-            ServerError: If the server returns an error
         """
-
         base_url = random.choice(self.base_urls)
-        # Ensure verification_info is a JSON string
         verification_info_str = ensure_json_serializable(verification_info)
-
-        try:
-            score = self._verify_pure(llm_output, verification_info_str, base_url)
-            return score
-
-        except requests.exceptions.ConnectionError as e:
-            raise ConnectionError(f"Failed to connect to the server: {str(e)}")
-        except requests.exceptions.Timeout as e:
-            raise TimeoutError(f"Request timed out: {str(e)}")
-        except (ValidationError, ServerError, VerificationError) as e:
-            # Re-raise these exceptions as they're already handled
-            raise
-        except Exception as e:
-            # Catch any other exceptions
-            raise RLVerifierError(f"Unexpected error: {str(e)}")
+        payload = {"llm_output": llm_output, "verification_info": verification_info_str}
+        
+        return self._make_request(base_url, payload)
 
     def verify_safe(
         self,
@@ -150,7 +160,6 @@ class RLVerifierClient:
         try:
             return self.verify(llm_output, verification_info)
         except Exception as e:
-            # Log the error but continue with default value
             print(f"Verification error (returning {default_value}): {str(e)}")
             return default_value
 
@@ -173,13 +182,6 @@ class RLVerifierClient:
 
         Returns:
             List of verification scores between 0 and 1, in the same order as the input batch
-
-        Raises:
-            ConnectionError: If there's an issue connecting to the server
-            TimeoutError: If the request times out
-            ValidationError: If the request data is invalid
-            ServerError: If the server returns an error
-            VerificationError: If the verification fails
         """
         assert len(batch) > 0
 
@@ -189,14 +191,11 @@ class RLVerifierClient:
         ]
         scores = [default_value] * len(items)
 
-        # Function to process a single verification request
         def process_single(item):
             _, llm_output, verification_info = item
             return self.verify_safe(llm_output, verification_info, default_value)
 
-        # Process the batch in parallel
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Create a dictionary mapping futures to their indices
             future_to_index = {
                 executor.submit(process_single, item): item[0] for item in items
             }
