@@ -1,27 +1,7 @@
 import math_verify
 
 from .base import BaseVerifier
-
-
-def get_last_boxed(text: str):
-    start_idx = text.rfind("\\boxed")
-    if start_idx < 0:
-        return None
-
-    right_brace_idx = None
-    num_left_braces_open = 0
-    for i in range(start_idx, len(text)):
-        if text[i] == "{":
-            num_left_braces_open += 1
-        if text[i] == "}":
-            num_left_braces_open -= 1
-            if num_left_braces_open == 0:
-                right_brace_idx = i
-                break
-
-    if not right_brace_idx:
-        return None
-    return text[start_idx : right_brace_idx + 1]
+from .utils import get_last_boxed
 
 
 class MathVerifier(BaseVerifier):

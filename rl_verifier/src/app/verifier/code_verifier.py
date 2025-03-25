@@ -1,4 +1,3 @@
-import re
 import requests
 
 from sandbox_fusion import (
@@ -10,25 +9,7 @@ from sandbox_fusion import (
 )
 from .base import BaseVerifier
 from .exception import VerifierInitializationError
-
-
-def has_code_block(text: str, language: str) -> bool:
-    """
-    Check if the text contains Python code blocks.
-
-    Args:
-        text (str): The text to check
-
-    Returns:
-        bool: True if the text contains Python code blocks, False otherwise
-    """
-    # Look for Python code blocks with the pattern ```python followed by code and closing ```
-    pattern = rf"```{language}\n(.*?)```"
-
-    # Use re.DOTALL to make the dot match newlines as well
-    match = re.search(pattern, text, re.DOTALL)
-
-    return match is not None
+from .utils import get_code_block
 
 
 class CodeVerifier(BaseVerifier):
@@ -63,7 +44,7 @@ class CodeVerifier(BaseVerifier):
         test_cases = verification_info["answer"]["test_cases"]
         language = verification_info["answer"].get("language", "python")
 
-        if not has_code_block(llm_output, language):
+        if not get_code_block(llm_output, language):
             return 0.0
 
         fmt_test_cases = [
