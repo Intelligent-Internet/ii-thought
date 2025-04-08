@@ -6,3 +6,7 @@ requests
 openai
 math-verify
 sandbox-fusion
+absl-py
+langdetect
+nltk
+immutabledict

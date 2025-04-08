@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from .verifier import (
     MathVerifier,
     CodeVerifier,
+    IFVerifier,
     SWEVerifier,
     LLMJudge,
     FormatVerifier,
@@ -20,6 +21,8 @@ def get_verifier(verification_type):
     """Factory function to create verifiers on demand."""
     if verification_type == "math_verifiable":
         return MathVerifier()
+    if verification_type == "if_verifier":
+        return IFVerifier()
     elif verification_type == "code_verifiable":
         return CodeVerifier(base_url=settings.fusion_sandbox_url)
     elif verification_type == "swe_verifiable":
@@ -49,6 +52,7 @@ SUPPORTED_VERIFIER_TYPES = [
     "code_verifiable",
     "swe_verifiable",
     "llm_judge",
+    "if_verifier"
 ]
 
 
